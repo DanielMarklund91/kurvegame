@@ -77,9 +77,7 @@ io.on('connection', (socket) => {
     if (!lobby) return;
 
     const player = lobbies[lobby].players.find(p => p.id === socket.id);
-    if (player) {
-      player.ready = !player.ready;
-    }
+    if (player) player.ready = !player.ready;
 
     emitLobbyState(lobby);
   });
@@ -87,6 +85,7 @@ io.on('connection', (socket) => {
   socket.on('forceStart', () => {
     const lobbyName = socketToLobby[socket.id];
     if (!lobbyName) return;
+
     const lobby = lobbies[lobbyName];
     const players = lobby.players;
     const isHost = players[0].id === socket.id;
@@ -100,6 +99,7 @@ io.on('connection', (socket) => {
   socket.on('input', (input) => {
     const lobbyName = socketToLobby[socket.id];
     if (!lobbyName) return;
+
     lobbies[lobbyName].inputs[socket.id] = input;
     socket.to(lobbyName).emit('opponentInput', { id: socket.id, input });
   });
@@ -122,8 +122,9 @@ io.on('connection', (socket) => {
           username: 'System',
           message: `${winner.username} wins the match! 🎉`
         });
-
         lobby.players.forEach(p => p.ready = false);
+      } else {
+        setTimeout(() => io.to(lobbyName).emit('startGame'), 1500);
       }
     }
 
