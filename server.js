@@ -1,14 +1,21 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 const PORT = process.env.PORT || 3000;
 
+// Serve static files
 app.use(express.static('public'));
+app.use('/src', express.static(path.join(__dirname, 'src')));
 
+// Display startup message
+console.log('Starting Enhanced Kurve Game with power-ups and particle effects!');
+
+// WebSocket server setup for collaborative features
 const lobbies = {
   'Lobby 1': { players: [], inputs: {}, scores: {} },
   'Lobby 2': { players: [], inputs: {}, scores: {} },
@@ -19,12 +26,16 @@ const lobbies = {
 const socketToLobby = {};
 const usernames = {};
 
+// Power-ups management
+const activePowerUps = {};
+
 function emitLobbyState(lobby) {
   io.to(lobby).emit('lobbyState', {
     players: lobbies[lobby].players.map(p => ({
       username: p.username,
       ready: p.ready,
-      host: lobbies[lobby].players[0]?.id === p.id
+      host: lobbies[lobby].players[0]?.id === p.id,
+      powerUps: activePowerUps[p.id] || []
     }))
   });
 }
@@ -39,6 +50,16 @@ function updateLobbyList() {
 
 io.on('connection', (socket) => {
   console.log(`✅ Socket connected: ${socket.id}`);
+
+  // Development dashboard WebSocket connection
+  if (socket.handshake.query && socket.handshake.query.type === 'dashboard') {
+    socket.join('dashboard');
+    socket.emit('dashboardInit', {
+      players: Object.keys(usernames).length,
+      lobbies: Object.keys(lobbies).length
+    });
+    return;
+  }
 
   socket.on('setUsername', (username) => {
     usernames[socket.id] = username;
@@ -59,6 +80,7 @@ io.on('connection', (socket) => {
     socketToLobby[socket.id] = lobbyName;
     lobby.inputs[socket.id] = { left: false, right: false };
     lobby.scores[player.username] = 0;
+    activePowerUps[socket.id] = [];
 
     socket.join(lobbyName);
     socket.emit('joinedLobby', { hostId: lobby.players[0].id });
@@ -104,6 +126,36 @@ io.on('connection', (socket) => {
     socket.to(lobbyName).emit('opponentInput', { id: socket.id, input });
   });
 
+  socket.on('powerUpCollected', (powerUpData) => {
+    const lobbyName = socketToLobby[socket.id];
+    if (!lobbyName) return;
+
+    // Add power-up to player's active power-ups
+    if (!activePowerUps[socket.id]) {
+      activePowerUps[socket.id] = [];
+    }
+    
+    activePowerUps[socket.id].push({
+      type: powerUpData.type,
+      expiresAt: Date.now() + powerUpData.duration
+    });
+
+    // Broadcast power-up collection to other players
+    socket.to(lobbyName).emit('playerCollectedPowerUp', {
+      playerId: socket.id,
+      type: powerUpData.type,
+      position: powerUpData.position
+    });
+
+    // Special case for "clear" power-up that affects all players
+    if (powerUpData.type === 'clear') {
+      io.to(lobbyName).emit('clearEffect', {
+        initiator: socket.id,
+        duration: 1500 // milliseconds
+      });
+    }
+  });
+
   socket.on('roundOver', () => {
     const lobbyName = socketToLobby[socket.id];
     const lobby = lobbies[lobbyName];
@@ -128,6 +180,11 @@ io.on('connection', (socket) => {
       }
     }
 
+    // Clear power-ups at end of round
+    lobby.players.forEach(p => {
+      activePowerUps[p.id] = [];
+    });
+
     emitLobbyState(lobbyName);
   });
 
@@ -149,6 +206,7 @@ io.on('connection', (socket) => {
         const name = lobbies[lobby].players[index].username;
         lobbies[lobby].players.splice(index, 1);
         delete lobbies[lobby].inputs[socket.id];
+        delete activePowerUps[socket.id];
 
         io.to(lobby).emit('chatMessage', {
           username: 'System',
@@ -162,7 +220,25 @@ io.on('connection', (socket) => {
 
     delete socketToLobby[socket.id];
     delete usernames[socket.id];
+    
+    io.to('dashboard').emit('playerDisconnected', {
+      playerId: socket.id,
+      activePlayers: Object.keys(usernames).length
+    });
   });
+});
+
+// API endpoints for development dashboard
+app.get('/api/stats', (req, res) => {
+  const stats = {
+    players: Object.keys(usernames).length,
+    lobbies: Object.entries(lobbies).map(([name, lobby]) => ({
+      name,
+      playerCount: lobby.players.length,
+      active: lobby.players.length > 0
+    }))
+  };
+  res.json(stats);
 });
 
 server.listen(PORT, () => {
