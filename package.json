@@ -1,32 +1,13 @@
 {
-  "name": "html5-kurve-game",
+  "name": "skizzo-achtung",
   "version": "1.0.0",
-  "description": "Achtung, die kurve game written in HTML5 and pure Javascript",
-  "main": "index.js",
+  "description": "Multiplayer Achtung game with Express and Socket.IO",
+  "main": "server.js",
   "scripts": {
-    "start": "npm run build && node .",
-    "watch": "watchify src/index.js -o dist/bundle.js",
-    "build": "browserify src/index.js -t [babelify] | uglifyjs > dist/bundle.js"
+    "start": "node server.js"
   },
-  "keywords": [],
-  "author": "akcyp",
-  "license": "ISC",
-  "devDependencies": {
-    "@babel/core": "^7.4.5",
-    "@babel/preset-env": "^7.4.5",
-    "babel": "^6.23.0",
-    "babel-core": "^6.26.3",
-    "babel-preset-minify": "^0.5.0",
-    "babelify": "^10.0.0",
-    "browserify": "^16.2.3",
-    "uglify-js": "^3.6.0",
-    "watchify": "^3.11.1"
-  },
-  "browserslist": {
-    "targets": "> 0.25%, not dead"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/akcyp/html5-kurve-game.git"
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2"
   }
 }

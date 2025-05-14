@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Skizzo Achtung</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600&display=swap" rel="stylesheet"/>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Orbitron', sans-serif;
+      background: #0d0d0d;
+      color: white;
+    }
+    #logo {
+      position: absolute;
+      top: 10px;
+      right: 20px;
+      width: 140px;
+      z-index: 20;
+      pointer-events: none;
+      display: none;
+    }
+    #logo.centered {
+      left: 50%;
+      right: auto;
+      transform: translateX(-50%);
+      display: block;
+    }
+    #hud {
+      position: absolute;
+      top: 60px;
+      left: 20px;
+      font-size: 18px;
+      color: white;
+      z-index: 10;
+    }
+    #usernameScreen, #lobbyScreen, #roomScreen {
+      display: none;
+      height: 100vh;
+      width: 100vw;
+    }
+    #usernameScreen {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+    }
+    #usernameInput {
+      padding: 10px;
+      font-size: 18px;
+    }
+    #lobbyList {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      padding: 40px;
+      justify-items: center;
+    }
+    .lobby {
+      background: #222;
+      padding: 20px;
+      border-radius: 8px;
+      width: 180px;
+      text-align: center;
+    }
+    .lobby button {
+      margin-top: 10px;
+    }
+    #roomScreen {
+      display: flex;
+    }
+    #playerList {
+      width: 220px;
+      background: #111;
+      padding: 20px;
+    }
+    .player-entry {
+      margin-bottom: 10px;
+    }
+    .ready-true {
+      color: #00ffcc;
+    }
+    .ready-false {
+      color: red;
+    }
+    #chatArea {
+      flex: 1;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+    }
+    #chatBox {
+      background: #222;
+      flex: 1;
+      margin-bottom: 10px;
+      overflow-y: auto;
+      padding: 10px;
+    }
+    canvas {
+      display: none;
+      position: absolute;
+      top: 0;
+      left: 220px;
+      background: #1a1a1a;
+    }
+    #countdown {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 60px;
+      color: #00ffcc;
+      display: none;
+      z-index: 10;
+    }
+  </style>
+</head>
+<body>
+  <img id="logo" src="/Skizzo-Achtung.png" alt="Skizzo Achtung Logo" class="centered" />
+  <div id="usernameScreen">
+    <h1>Skizzo Achtung</h1>
+    <input id="usernameInput" placeholder="Enter username..." />
+    <button onclick="submitUsername()">Continue</button>
+  </div>
+
+  <div id="lobbyScreen">
+    <h2 style="text-align:center;">Join a Lobby</h2>
+    <div id="lobbyList"></div>
+  </div>
+
+  <div id="roomScreen">
+    <div id="playerList"></div>
+    <div id="chatArea">
+      <div id="chatBox"></div>
+      <div>
+        <input id="chatInput" />
+        <button onclick="sendChat()">Send</button>
+        <button onclick="toggleReady()">I'm Ready</button>
+        <button id="startBtn" style="display:none;" onclick="requestStart()">Start Game</button>
+      </div>
+    </div>
+  </div>
+
+  <canvas id="gameCanvas"></canvas>
+  <div id="hud">Use arrow keys ← → to steer</div>
+  <div id="countdown">3</div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    let username = '';
+    let isReady = false;
+    let players = [], inputState = {}, opponentInput = {};
+    const isHost = { value: false };
+
+    const gameCanvas = document.getElementById('gameCanvas');
+    const ctx = gameCanvas.getContext('2d', { willReadFrequently: true });
+    const bufferCanvas = document.createElement('canvas');
+    const bufferCtx = bufferCanvas.getContext('2d');
+
+    const usernameScreen = document.getElementById('usernameScreen');
+    const lobbyScreen = document.getElementById('lobbyScreen');
+    const roomScreen = document.getElementById('roomScreen');
+    const lobbyList = document.getElementById('lobbyList');
+    const playerList = document.getElementById('playerList');
+    const chatBox = document.getElementById('chatBox');
+    const countdownEl = document.getElementById('countdown');
+    const startBtn = document.getElementById('startBtn');
+    const logo = document.getElementById('logo');
+
+    gameCanvas.width = window.innerWidth - 220;
+    gameCanvas.height = window.innerHeight;
+
+    document.addEventListener('keydown', e => {
+      if (e.code === 'KeyA') inputState.left = true;
+      if (e.code === 'KeyD') inputState.right = true;
+      socket.emit('input', inputState);
+    });
+
+    document.addEventListener('keyup', e => {
+      if (e.code === 'KeyA') inputState.left = false;
+      if (e.code === 'KeyD') inputState.right = false;
+      socket.emit('input', inputState);
+    });
+
+    function submitUsername() {
+      username = document.getElementById('usernameInput').value;
+      if (username) {
+        socket.emit('setUsername', username);
+        usernameScreen.style.display = 'none';
+        logo.classList.remove('centered');
+        logo.style.display = 'block';
+        lobbyScreen.style.display = 'block';
+      }
+    }
+
+    function joinLobby(name) {
+      socket.emit('joinLobby', name);
+      document.querySelectorAll('.lobby button').forEach(btn => btn.disabled = true);
+    }
+
+    function sendChat() {
+      const msg = document.getElementById('chatInput').value;
+      if (msg) {
+        socket.emit('sendChat', msg);
+        document.getElementById('chatInput').value = '';
+      }
+    }
+
+    function toggleReady() {
+      isReady = !isReady;
+      socket.emit('readyToggle');
+    }
+
+    function requestStart() {
+      socket.emit('forceStart');
+    }
+
+    socket.on('joinedLobby', ({ hostId }) => {
+      roomScreen.style.display = 'flex';
+      lobbyScreen.style.display = 'none';
+      isHost.value = socket.id === hostId;
+      startBtn.style.display = isHost.value ? 'inline-block' : 'none';
+    });
+
+    socket.on('lobbyList', (lobbies) => {
+      lobbyList.innerHTML = '';
+      Object.entries(lobbies).forEach(([name, lobby]) => {
+        const div = document.createElement('div');
+        div.className = 'lobby';
+        div.innerHTML = `<strong>${name}</strong><br>${lobby.players.length}/4<br><button onclick="joinLobby('${name}')">Join</button>`;
+        lobbyList.appendChild(div);
+      });
+    });
+
+    socket.on('lobbyState', (data) => {
+      playerList.innerHTML = '';
+      data.players.forEach(p => {
+        const label = p.host ? '(Host)' : '';
+        const div = document.createElement('div');
+        div.className = 'player-entry';
+        div.innerHTML = `<span class="${p.ready ? 'ready-true' : 'ready-false'}">${p.ready ? '✔️' : '❌'}</span> ${p.username} ${label}`;
+        playerList.appendChild(div);
+      });
+    });
+
+    socket.on('chatMessage', ({ username, message }) => {
+      chatBox.innerHTML += `<div><strong>${username}:</strong> ${message}</div>`;
+      chatBox.scrollTop = chatBox.scrollHeight;
+    });
+
+    socket.on('opponentInput', data => { opponentInput = data.input; });
+
+    socket.on('startGame', () => {
+      roomScreen.style.display = 'none';
+      gameCanvas.style.display = 'block';
+      startCountdown(startGame);
+    });
+
+    function startCountdown(callback) {
+      let count = 3;
+      countdownEl.style.display = 'block';
+      countdownEl.textContent = count;
+      const interval = setInterval(() => {
+        count--;
+        if (count > 0) countdownEl.textContent = count;
+        else {
+          clearInterval(interval);
+          countdownEl.textContent = 'GO!';
+          setTimeout(() => {
+            countdownEl.style.display = 'none';
+            callback();
+          }, 800);
+        }
+      }, 1000);
+    }
+
+    function createPlayer(x, y, angle, color, input) {
+      return { x, y, angle, color, input, trail: [], alive: true, spawnCooldown: 40, speed: 1.0
+       };
+    }
+
+    function checkCollision(x, y) {
+      const [r, g, b] = bufferCtx.getImageData(Math.floor(x), Math.floor(y), 1, 1).data;
+      return !(Math.abs(r - 26) <= 2 && Math.abs(g - 26) <= 2 && Math.abs(b - 26) <= 2);
+    }
+
+  function startGame() {
+  const midY = gameCanvas.height / 2;
+console.log("🎮 Game started");
+  // ✅ Fix: sync buffer canvas size
+  bufferCanvas.width = gameCanvas.width;
+  bufferCanvas.height = gameCanvas.height;
+
+  players = [
+    createPlayer(200, midY, 0, '#00ff00', inputState),
+    createPlayer(gameCanvas.width - 200, midY, Math.PI, '#00ffff', opponentInput)
+  ];
+  bufferCtx.fillStyle = '#1a1a1a';
+  bufferCtx.fillRect(0, 0, gameCanvas.width, gameCanvas.height);
+  requestAnimationFrame(gameLoop);
+}
+
+    function gameLoop() {
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(0, 0, gameCanvas.width, gameCanvas.height);
+console.log("🎮 Looping...");
+      let allSpawned = true;
+      players.forEach(p => {
+        if (!p.alive) return;
+        if (p.input.left) p.angle -= 0.05;
+        if (p.input.right) p.angle += 0.05;
+        p.x += Math.cos(p.angle) * p.speed;
+        p.y += Math.sin(p.angle) * p.speed;
+        if (p.spawnCooldown <= 0) {
+          p.trail.push({ x: p.x, y: p.y });
+        } else {
+          allSpawned = false;
+        }
+        p.spawnCooldown--;
+        if (p.spawnCooldown <= 0 && checkCollision(p.x, p.y)) p.alive = false;
+      });
+
+      players.forEach(p => {
+        if (!p.alive || p.trail.length < 2 || p.spawnCooldown > 0) return;
+        ctx.strokeStyle = p.color;
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.moveTo(p.trail[0].x, p.trail[0].y);
+        for (let i = 1; i < p.trail.length; i++) {
+          ctx.lineTo(p.trail[i].x, p.trail[i].y);
+        }
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        bufferCtx.strokeStyle = p.color;
+        bufferCtx.beginPath();
+        bufferCtx.moveTo(p.trail[0].x, p.trail[0].y);
+        for (let i = 1; i < p.trail.length; i++) {
+          bufferCtx.lineTo(p.trail[i].x, p.trail[i].y);
+        }
+        bufferCtx.stroke();
+      });
+
+      const alive = players.filter(p => p.alive);
+      if (allSpawned && alive.length <= 1) {
+        socket.emit('roundOver');
+        return;
+      }
+
+      requestAnimationFrame(gameLoop);
+    }
+  </script>
+</body>
+</html>

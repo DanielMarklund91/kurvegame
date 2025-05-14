@@ -1,15 +1,204 @@
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="X-UA-Compatible" content="ie=edge">
-  <title>ACHTUNG DIE KURVE</title>
-  <link rel="stylesheet" href="./style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Achtung Modern</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600&display=swap" rel="stylesheet" />
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #0d0d0d;
+    }
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      background: #1a1a1a;
+    }
+    #hud {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      font-family: 'Orbitron', sans-serif;
+      color: white;
+      font-size: 20px;
+      z-index: 10;
+    }
+    #playAgainBtn {
+      margin-top: 10px;
+      padding: 8px 16px;
+      background: #00ffcc;
+      color: black;
+      border: none;
+      font-weight: bold;
+      cursor: pointer;
+      border-radius: 5px;
+    }
+    #playAgainBtn:hover {
+      background: #00ddaa;
+    }
+  </style>
 </head>
 <body>
-  <div class="center">
-    <div id="app"></div>
+  <canvas id="gameCanvas"></canvas>
+  <div id="hud">
+    <div id="status">Use Arrow Keys + W/D</div>
+    <button id="playAgainBtn" onclick="restartGame()" style="display:none;">Play Again</button>
   </div>
-  <script src="./dist/bundle.js"></script>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Offscreen buffer for collision detection
+    const bufferCanvas = document.createElement('canvas');
+    const bufferCtx = bufferCanvas.getContext('2d');
+
+    const statusText = document.getElementById('status');
+    const playAgainBtn = document.getElementById('playAgainBtn');
+
+    canvas.width = bufferCanvas.width = window.innerWidth;
+    canvas.height = bufferCanvas.height = window.innerHeight;
+
+    ctx.lineWidth = 3;
+    bufferCtx.lineWidth = 3;
+
+    const keys = {};
+    document.addEventListener('keydown', e => keys[e.code] = true);
+    document.addEventListener('keyup', e => keys[e.code] = false);
+
+    class Player {
+      constructor(x, y, angle, color, leftKey, rightKey) {
+        this.x = x;
+        this.y = y;
+        this.angle = angle;
+        this.color = color;
+        this.leftKey = leftKey;
+        this.rightKey = rightKey;
+        this.speed = 1.4;
+        this.trail = [];
+        this.alive = true;
+        this.spawnCooldown = 60;
+      }
+
+      update() {
+        if (!this.alive) return;
+
+        if (keys[this.leftKey]) this.angle -= 0.05;
+        if (keys[this.rightKey]) this.angle += 0.05;
+
+        this.x += Math.cos(this.angle) * this.speed;
+        this.y += Math.sin(this.angle) * this.speed;
+
+        if (this.spawnCooldown <= 0) {
+          this.trail.push({ x: this.x, y: this.y });
+        }
+
+        this.spawnCooldown--;
+      }
+
+      draw() {
+        if (!this.alive || this.trail.length < 2 || this.spawnCooldown > 0) return;
+
+        // Draw to visible canvas
+        ctx.shadowColor = this.color;
+        ctx.shadowBlur = 12;
+        ctx.strokeStyle = this.color;
+        ctx.beginPath();
+        ctx.moveTo(this.trail[0].x, this.trail[0].y);
+        for (let i = 1; i < this.trail.length; i++) {
+          ctx.lineTo(this.trail[i].x, this.trail[i].y);
+        }
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // Draw same path to buffer canvas (no shadow)
+        bufferCtx.strokeStyle = this.color;
+        bufferCtx.beginPath();
+        bufferCtx.moveTo(this.trail[0].x, this.trail[0].y);
+        for (let i = 1; i < this.trail.length; i++) {
+          bufferCtx.lineTo(this.trail[i].x, this.trail[i].y);
+        }
+        bufferCtx.stroke();
+      }
+    }
+
+    let players, gameRunning = true, frameId = null;
+
+    function initGame() {
+      players = [
+        new Player(200, 300, 0, '#00ff00', 'KeyA', 'KeyD'),
+        new Player(canvas.width - 200, 300, Math.PI, '#00ffff', 'ArrowLeft', 'ArrowRight')
+      ];
+
+      // Clear both canvases
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      bufferCtx.clearRect(0, 0, canvas.width, canvas.height);
+      bufferCtx.fillStyle = '#1a1a1a';
+      bufferCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+      gameRunning = true;
+      statusText.textContent = 'Game in progress...';
+      playAgainBtn.style.display = 'none';
+      gameLoop();
+    }
+
+    function checkCollision(x, y) {
+      const [r, g, b] = bufferCtx.getImageData(Math.floor(x), Math.floor(y), 1, 1).data;
+      const isSafe =
+        Math.abs(r - 26) <= 2 &&
+        Math.abs(g - 26) <= 2 &&
+        Math.abs(b - 26) <= 2;
+      return !isSafe;
+    }
+
+    function gameLoop() {
+      if (!gameRunning) return;
+
+      let allSpawned = true;
+
+      for (const p of players) {
+        p.update();
+        if (p.spawnCooldown > 0) {
+          allSpawned = false;
+          continue;
+        }
+        if (p.alive && checkCollision(p.x, p.y)) {
+          console.log(`Collision detected at (${p.x.toFixed(1)}, ${p.y.toFixed(1)})`);
+          p.alive = false;
+        }
+      }
+
+      for (const p of players) {
+        p.draw();
+      }
+
+      if (allSpawned) {
+        const alivePlayers = players.filter(p => p.alive);
+        if (alivePlayers.length <= 1) {
+          gameRunning = false;
+          statusText.textContent = alivePlayers.length === 1 ? 'Player Wins!' : 'Game Over';
+          playAgainBtn.style.display = 'inline-block';
+          return;
+        }
+      }
+
+      frameId = requestAnimationFrame(gameLoop);
+    }
+
+    function restartGame() {
+      if (frameId) cancelAnimationFrame(frameId);
+      frameId = null;
+      initGame();
+    }
+
+    initGame();
+  </script>
 </body>
 </html>
