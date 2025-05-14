@@ -12,6 +12,7 @@
       font-family: 'Orbitron', sans-serif;
       background: #0d0d0d;
       color: white;
+      overflow: hidden;
     }
     #logo {
       position: absolute;
@@ -33,7 +34,6 @@
       top: 60px;
       left: 20px;
       font-size: 18px;
-      color: white;
       z-index: 10;
     }
     #usernameScreen, #lobbyScreen, #roomScreen {
@@ -144,7 +144,7 @@
   </div>
 
   <canvas id="gameCanvas"></canvas>
-  <div id="hud">Use arrow keys ← → to steer</div>
+  <div id="hud">Use arrow keys ← → or A/D to steer</div>
   <div id="countdown">3</div>
 
   <script src="/socket.io/socket.io.js"></script>
@@ -174,14 +174,14 @@
     gameCanvas.height = window.innerHeight;
 
     document.addEventListener('keydown', e => {
-      if (e.code === 'KeyA') inputState.left = true;
-      if (e.code === 'KeyD') inputState.right = true;
+      if (e.code === 'KeyA' || e.code === 'ArrowLeft') inputState.left = true;
+      if (e.code === 'KeyD' || e.code === 'ArrowRight') inputState.right = true;
       socket.emit('input', inputState);
     });
 
     document.addEventListener('keyup', e => {
-      if (e.code === 'KeyA') inputState.left = false;
-      if (e.code === 'KeyD') inputState.right = false;
+      if (e.code === 'KeyA' || e.code === 'ArrowLeft') inputState.left = false;
+      if (e.code === 'KeyD' || e.code === 'ArrowRight') inputState.right = false;
       socket.emit('input', inputState);
     });
 
@@ -278,8 +278,7 @@
     }
 
     function createPlayer(x, y, angle, color, input) {
-      return { x, y, angle, color, input, trail: [], alive: true, spawnCooldown: 40, speed: 1.0
-       };
+      return { x, y, angle, color, input, trail: [], alive: true, spawnCooldown: 40, speed: 1.5 };
     }
 
     function checkCollision(x, y) {
@@ -287,26 +286,25 @@
       return !(Math.abs(r - 26) <= 2 && Math.abs(g - 26) <= 2 && Math.abs(b - 26) <= 2);
     }
 
-  function startGame() {
-  const midY = gameCanvas.height / 2;
-console.log("🎮 Game started");
-  // ✅ Fix: sync buffer canvas size
-  bufferCanvas.width = gameCanvas.width;
-  bufferCanvas.height = gameCanvas.height;
+    function startGame() {
+      const midY = gameCanvas.height / 2;
+      bufferCanvas.width = gameCanvas.width;
+      bufferCanvas.height = gameCanvas.height;
 
-  players = [
-    createPlayer(200, midY, 0, '#00ff00', inputState),
-    createPlayer(gameCanvas.width - 200, midY, Math.PI, '#00ffff', opponentInput)
-  ];
-  bufferCtx.fillStyle = '#1a1a1a';
-  bufferCtx.fillRect(0, 0, gameCanvas.width, gameCanvas.height);
-  requestAnimationFrame(gameLoop);
-}
+      players = [
+        createPlayer(200, midY, 0, '#00ff00', inputState),
+        createPlayer(gameCanvas.width - 200, midY, Math.PI, '#00ffff', opponentInput)
+      ];
+
+      bufferCtx.fillStyle = '#1a1a1a';
+      bufferCtx.fillRect(0, 0, gameCanvas.width, gameCanvas.height);
+      requestAnimationFrame(gameLoop);
+    }
 
     function gameLoop() {
       ctx.fillStyle = '#1a1a1a';
       ctx.fillRect(0, 0, gameCanvas.width, gameCanvas.height);
-console.log("🎮 Looping...");
+
       let allSpawned = true;
       players.forEach(p => {
         if (!p.alive) return;
